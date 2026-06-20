@@ -4,12 +4,13 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/spf13/pflag"
 
 	"github.com/nadeem-syed/x-dl-go/internal/clip"
 	"github.com/nadeem-syed/x-dl-go/internal/downloader"
@@ -275,42 +276,40 @@ Playlist URL:
 
 // parseArgs returns a nil *cliOptions when --help or --version was
 // handled (caller should exit 0).
+//
+// Uses pflag (GNU-style) so flags may appear before, after, or
+// interleaved with the positional URL — stdlib flag stops parsing at
+// the first positional, which would silently drop flags-after-URL.
 func parseArgs(args []string) (*cliOptions, error) {
-	fs := flag.NewFlagSet("x-dl", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("x-dl", pflag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, helpText) }
 
 	var (
-		urlLong, urlShort   string
-		outLong, outShort   string
-		fromFlag, toFlag    string
-		urlOnly, headed     bool
-		showVer, showHelp   bool
-		verShort, helpShort bool
-		timeoutSeconds      int
+		urlFlag, outFlag string
+		fromFlag, toFlag string
+		urlOnly, headed  bool
+		showVer, showHelp bool
+		timeoutSeconds   int
 	)
-	fs.StringVar(&urlLong, "url", "", "tweet URL")
-	fs.StringVar(&urlShort, "u", "", "tweet URL (short)")
-	fs.StringVar(&outLong, "output", "", "output dir or file path")
-	fs.StringVar(&outShort, "o", "", "output dir or file path (short)")
+	fs.StringVarP(&urlFlag, "url", "u", "", "tweet URL")
+	fs.StringVarP(&outFlag, "output", "o", "", "output dir or file path")
 	fs.StringVar(&fromFlag, "from", "", "clip start (MM:SS)")
 	fs.StringVar(&toFlag, "to", "", "clip end (MM:SS)")
 	fs.BoolVar(&urlOnly, "url-only", false, "print video URL only")
 	fs.IntVar(&timeoutSeconds, "timeout", 30, "page load timeout in seconds")
 	fs.BoolVar(&headed, "headed", false, "show the browser window")
-	fs.BoolVar(&showVer, "version", false, "print version")
-	fs.BoolVar(&verShort, "v", false, "print version (short)")
-	fs.BoolVar(&showHelp, "help", false, "print help")
-	fs.BoolVar(&helpShort, "h", false, "print help (short)")
+	fs.BoolVarP(&showVer, "version", "v", false, "print version")
+	fs.BoolVarP(&showHelp, "help", "h", false, "print help")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
-	if showHelp || helpShort {
+	if showHelp {
 		fmt.Print(helpText)
 		return nil, nil
 	}
-	if showVer || verShort {
+	if showVer {
 		fmt.Println(version)
 		return nil, nil
 	}
@@ -319,11 +318,9 @@ func parseArgs(args []string) (*cliOptions, error) {
 		return nil, fmt.Errorf("--timeout must be a positive integer (got %d)", timeoutSeconds)
 	}
 
-	url := firstNonEmpty(urlLong, urlShort)
-	out := firstNonEmpty(outLong, outShort)
-
+	url := urlFlag
 	if url == "" {
-		// Look for a positional URL (must be the first non-flag remaining).
+		// Look for a positional URL (first non-flag remaining).
 		rest := fs.Args()
 		if len(rest) > 0 {
 			url = rest[0]
@@ -340,17 +337,10 @@ func parseArgs(args []string) (*cliOptions, error) {
 
 	return &cliOptions{
 		url:            url,
-		output:         out,
+		output:         outFlag,
 		urlOnly:        urlOnly,
 		timeoutSeconds: timeoutSeconds,
 		headed:         headed,
 		clipSpec:       clipSpec,
 	}, nil
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

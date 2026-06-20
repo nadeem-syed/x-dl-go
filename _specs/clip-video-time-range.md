@@ -15,6 +15,11 @@ Allow the user to keep only a chosen portion of a tweet's video instead of savin
 - If neither flag is provided, behavior is unchanged from today and the full video is saved.
 - If only one is provided, the other defaults as above (start of video / end of video).
 
+### CLI invocation
+
+- Flag position must not change behavior. `x-dl <url> --from 0:10 --to 0:30` must produce the same result as `x-dl --from 0:10 --to 0:30 <url>`. Any other interleaving of flags and the positional URL is equally valid.
+- This applies to every existing flag too (`--output`, `--url-only`, `--timeout`, `--headed`), not just the new ones — a side effect of fixing this for `--from`/`--to` is that the whole CLI gains position-independence.
+
 ### Timestamp format
 
 - Format is `<minutes>:<seconds>` where:
@@ -75,6 +80,7 @@ In both cases the trim step is stream-copy, and the spinner runs during the ffmp
 ## Acceptance Criteria
 
 - With no clip flags, the produced output file is byte-identical to the pre-feature behavior (no ffmpeg trim invoked when none was needed).
+- Flag position invariance: `x-dl <url> --from 0:10 --to 0:30` and `x-dl --from 0:10 --to 0:30 <url>` produce identical output. The clipped file exists, has the `_clip` suffix, and has the expected duration in both invocations.
 - `--from 00:10 --to 00:30` on a video longer than 30 seconds produces a file whose duration (per `ffprobe`) is `20s ± 2s` and starts within `~2s` of the 10-second mark. (Tolerance reflects keyframe alignment in stream-copy mode.)
 - Only `--from 00:05` → output starts within `~2s` of 5 seconds, ends at the original end.
 - Only `--to 00:15` → output starts at 0, ends within `~2s` of 15 seconds.

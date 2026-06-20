@@ -77,11 +77,18 @@ Parser rule: minutes is one-or-more digits (no upper bound), `:`, seconds is exa
   ```
   Args: `-y -hide_banner -loglevel error -ss <start> -i <input> -t <duration> -c copy <output>`. Reuses the same stall-watchdog pattern as `DownloadHLS`.
 
+### CLI parser swap (stdlib `flag` → `github.com/spf13/pflag`)
+
+The spec's CLI-invocation requirement (flag position must not change behavior) is impossible to satisfy with stdlib `flag`, which stops parsing flags at the first non-flag positional. Swap to `spf13/pflag` (GNU-style: interleaved flags and positionals, `--flag=value` form, single-call long/short registration via `StringVarP`/`BoolVarP`). Adds one dep; touches only `cmd/x-dl/main.go`. The fact that `--from`/`--to` are likely to be appended after the URL by users is what surfaced this pre-existing bug.
+
 ### Changes to `cmd/x-dl/main.go`
 
+- Imports: drop stdlib `"flag"`, add `pflag "github.com/spf13/pflag"`.
 - `cliOptions` ([`cmd/x-dl/main.go:43`](cmd/x-dl/main.go#L43)) adds `from, to string`.
 - `parseArgs` ([`cmd/x-dl/main.go:186`](cmd/x-dl/main.go#L186)):
-  - Register `--from`, `--to` via `fs.StringVar` (no short forms).
+  - Replace `flag.NewFlagSet` / `flag.ContinueOnError` with `pflag.NewFlagSet` / `pflag.ContinueOnError`.
+  - Collapse existing long/short flag pairs (`url`/`u`, `output`/`o`, `version`/`v`, `help`/`h`) into single `StringVarP`/`BoolVarP` calls — the `urlLong`/`urlShort`, `outLong`/`outShort`, `showVer`/`verShort`, `showHelp`/`helpShort` pair-then-coalesce-with-`firstNonEmpty` dance goes away (delete `firstNonEmpty`).
+  - Register `--from`, `--to` via `StringVarP` with no shorthand (`""`).
   - After parsing, call `clip.ParseSpec(from, to)` so a bad value fails before Chromium launches. Store the parsed `Spec` on `cliOptions`.
 - `helpText` ([`cmd/x-dl/main.go:23`](cmd/x-dl/main.go#L23)) gains:
   - `--from <MM:SS>`, `--to <MM:SS>` with the format rule and "defaults to start/end of video".
@@ -127,8 +134,9 @@ End-to-end trim test in [`internal/ffmpeg/ffmpeg_trim_test.go`](internal/ffmpeg/
 
 Modified:
 
-- [`cmd/x-dl/main.go`](cmd/x-dl/main.go) — new flags, help text, `run` orchestration, dispatch for clipped paths.
+- [`cmd/x-dl/main.go`](cmd/x-dl/main.go) — parser swap to pflag, new flags, help text, `run` orchestration, dispatch for clipped paths.
 - [`internal/ffmpeg/ffmpeg.go`](internal/ffmpeg/ffmpeg.go) — `IsFfprobeAvailable`, `Probe`, extended `HLSOptions`, new `TrimFile`.
+- `go.mod` / `go.sum` — add `github.com/spf13/pflag` (`go get`).
 
 New:
 
@@ -152,6 +160,7 @@ End-to-end (manual, after implementation):
 - `./x-dl https://x.com/<user>/status/<id>` — unchanged behavior; full video saved at `~/Downloads/<user>_<id>.mp4`.
 - `./x-dl --from 0:05 --to 0:15 https://x.com/<user>/status/<id>` (mp4 source) — saves `~/Downloads/<user>_<id>_clip.mp4` ~10s long; `ffprobe -i <out> -show_entries format=duration` reports ~10s.
 - Same flags on an HLS source (look for one with `result.Format == "m3u8"` in the URL printout) — same outcome.
+- **Flag position invariance** — `./x-dl https://x.com/<user>/status/<id> --from 0:05 --to 0:15` (flags AFTER the URL) produces an identical clipped file to the flags-before-URL invocation. Also try `--from=0:05` (pflag's `=` form). Both must work.
 - `./x-dl --from 0:10 https://x.com/.../<short>` — error mentioning the actual duration.
 - `./x-dl --from 0:30 --to 0:10 https://x.com/...` — error before any download.
 - `./x-dl --from 99 https://x.com/...` — parse error showing `MM:SS` format.
